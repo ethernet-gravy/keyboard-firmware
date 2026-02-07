@@ -34,18 +34,13 @@
     in
     {
       overlays.default = final: prev: {
-        rustToolchain =
-          with inputs.fenix.packages.${prev.stdenv.hostPlatform.system};
-          combine (
-            with stable;
-            [
-              clippy
-              rustc
-              cargo
-              rustfmt
-              rust-src
-            ]
-          );
+        rustToolchain = inputs.fenix.packages.${prev.stdenv.hostPlatform.system}.fromToolchainFile {
+            file = ./rust-toolchain.toml;
+            #sha256 = inputs.nixpkgs.lib.fakeSha256;
+            sha256 = "sha256-qaiVSNjXbvb8Jd+Zo0y59MrGs8KQwCQ/QwSm4Gn4Lxs=";
+        };
+
+
       };
 
       devShells = forEachSupportedSystem (
@@ -60,6 +55,8 @@
               cargo-edit
               cargo-watch
               rust-analyzer
+              flip-link
+              picotool
               gcc
             ];
 
