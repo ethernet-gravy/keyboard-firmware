@@ -6,12 +6,12 @@
 use bsp::entry;
 use defmt::*;
 use defmt_rtt as _;
-use embedded_hal::digital::OutputPin;
+use embedded_hal::digital::{InputPin, OutputPin};
 use panic_probe as _;
 
 // Provide an alias for our BSP so we can switch targets quickly.
 // Uncomment the BSP you included in Cargo.toml, the rest of the code does not need to change.
-use rp_pico as bsp;
+use rp_pico::{self as bsp, hal::pio::PinState};
 // use sparkfun_pro_micro_rp2040 as bsp;
 
 use bsp::hal::{
@@ -63,13 +63,51 @@ fn main() -> ! {
     // in series with the LED.
     let mut led_pin = pins.gpio17.into_push_pull_output();
 
+    // let mut cols = (
+    //     pins.gpio27.into_push_pull_output(),
+    //     pins.gpio26.into_push_pull_output(),
+    //     pins.gpio15.into_push_pull_output(),
+    //     pins.gpio14.into_push_pull_output(),
+    //     pins.gpio16.into_push_pull_output(),
+    // );
+
+    // let mut rows = (
+    //     pins.gpio5.into_pull_down_input(),
+    //     pins.gpio6.into_pull_down_input(),
+    //     pins.gpio7.into_pull_down_input(),
+    //     pins.gpio8.into_pull_down_input(),
+    // );
+
+    let mut col4 = pins.b_power_save.into_push_pull_output();
+    let mut row0 = pins.gpio5.into_pull_down_input();
+
     loop {
-        info!("on!");
-        led_pin.set_high().unwrap();
-        delay.delay_ms(500);
-        info!("off!");
-        led_pin.set_low().unwrap();
-        delay.delay_ms(500);
+        // info!("on!");
+        // led_pin.set_high().unwrap();
+        // delay.delay_ms(500);
+        // info!("off!");
+        // led_pin.set_low().unwrap();
+        // delay.delay_ms(500);
+
+        // cols.0.set_high();
+        // cols.1.set_high();
+        // cols.2.set_high();
+        // cols.3.set_high();
+        col4.set_high().unwrap();
+
+        delay.delay_ms(20);
+        // cols.0.set_low();
+        // cols.1.set_low();
+        // cols.2.set_low();
+        // cols.3.set_low();
+
+        if row0.is_high().unwrap() {
+            led_pin.set_high().unwrap();
+        } else {
+            led_pin.set_low().unwrap();
+        }
+
+        col4.set_low().unwrap();
     }
 }
 
