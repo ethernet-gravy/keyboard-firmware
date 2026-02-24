@@ -13,10 +13,7 @@ use panic_probe as _;
 // Uncomment the BSP you included in Cargo.toml, the rest of the code does not need to change.
 use rp_pico::{
     self as bsp,
-    hal::{
-        gpio::{AnyPin, DynFunction, DynPinId, Function, Pin, PullDown, SioOutput},
-        pio::PinState,
-    },
+    hal::gpio::{DynPinId, FunctionSioOutput, Pin, PullDown},
 };
 // use sparkfun_pro_micro_rp2040 as bsp;
 
@@ -77,7 +74,7 @@ fn main() -> ! {
     //     pins.gpio16.into_push_pull_output(),
     // );
 
-    let mut cols: [Pin<DynPinId, _, PullDown>; 5] = [
+    let mut cols: [Pin<DynPinId, FunctionSioOutput, PullDown>; 5] = [
         pins.gpio27.into_push_pull_output().into_dyn_pin(),
         pins.gpio26.into_push_pull_output().into_dyn_pin(),
         pins.gpio15.into_push_pull_output().into_dyn_pin(),
