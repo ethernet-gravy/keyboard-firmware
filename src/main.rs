@@ -11,7 +11,13 @@ use panic_probe as _;
 
 // Provide an alias for our BSP so we can switch targets quickly.
 // Uncomment the BSP you included in Cargo.toml, the rest of the code does not need to change.
-use rp_pico::{self as bsp, hal::pio::PinState};
+use rp_pico::{
+    self as bsp,
+    hal::{
+        gpio::{AnyPin, DynFunction, DynPinId, Function, Pin, PullDown, SioOutput},
+        pio::PinState,
+    },
+};
 // use sparkfun_pro_micro_rp2040 as bsp;
 
 use bsp::hal::{
@@ -71,6 +77,13 @@ fn main() -> ! {
     //     pins.gpio16.into_push_pull_output(),
     // );
 
+    let mut cols: [Pin<DynPinId, _, PullDown>; 5] = [
+        pins.gpio27.into_push_pull_output().into_dyn_pin(),
+        pins.gpio26.into_push_pull_output().into_dyn_pin(),
+        pins.gpio15.into_push_pull_output().into_dyn_pin(),
+        pins.gpio14.into_push_pull_output().into_dyn_pin(),
+        pins.b_power_save.into_push_pull_output().into_dyn_pin(),
+    ];
     // let mut rows = (
     //     pins.gpio5.into_pull_down_input(),
     //     pins.gpio6.into_pull_down_input(),
@@ -78,7 +91,6 @@ fn main() -> ! {
     //     pins.gpio8.into_pull_down_input(),
     // );
 
-    let mut col4 = pins.b_power_save.into_push_pull_output();
     let mut row0 = pins.gpio5.into_pull_down_input();
 
     loop {
@@ -93,7 +105,7 @@ fn main() -> ! {
         // cols.1.set_high();
         // cols.2.set_high();
         // cols.3.set_high();
-        col4.set_high().unwrap();
+        cols[4].set_high().unwrap();
 
         delay.delay_ms(20);
         // cols.0.set_low();
@@ -107,7 +119,7 @@ fn main() -> ! {
             led_pin.set_low().unwrap();
         }
 
-        col4.set_low().unwrap();
+        cols[4].set_low().unwrap();
     }
 }
 
