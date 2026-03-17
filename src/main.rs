@@ -13,7 +13,7 @@ use panic_probe as _;
 // Uncomment the BSP you included in Cargo.toml, the rest of the code does not need to change.
 use rp_pico::{
     self as bsp,
-    hal::gpio::{DynPinId, FunctionSioOutput, Pin, PullDown},
+    hal::gpio::{DynPinId, FunctionSioInput, FunctionSioOutput, Pin, PullDown, PullNone},
 };
 // use sparkfun_pro_micro_rp2040 as bsp;
 
@@ -74,49 +74,56 @@ fn main() -> ! {
     //     pins.gpio16.into_push_pull_output(),
     // );
 
-    let mut cols: [Pin<DynPinId, FunctionSioOutput, PullDown>; 5] = [
-        pins.gpio27.into_push_pull_output().into_dyn_pin(),
-        pins.gpio26.into_push_pull_output().into_dyn_pin(),
-        pins.gpio15.into_push_pull_output().into_dyn_pin(),
-        pins.gpio14.into_push_pull_output().into_dyn_pin(),
-        pins.b_power_save.into_push_pull_output().into_dyn_pin(),
+    let mut cols: [Pin<DynPinId, FunctionSioOutput, PullNone>; 5] = [
+        pins.gpio27
+            .into_push_pull_output()
+            .into_pull_type()
+            .into_dyn_pin(),
+        pins.gpio26
+            .into_push_pull_output()
+            .into_pull_type()
+            .into_dyn_pin(),
+        pins.gpio15
+            .into_push_pull_output()
+            .into_pull_type()
+            .into_dyn_pin(),
+        pins.gpio14
+            .into_push_pull_output()
+            .into_pull_type()
+            .into_dyn_pin(),
+        pins.b_power_save
+            .into_push_pull_output()
+            .into_pull_type()
+            .into_dyn_pin(),
     ];
-    // let mut rows = (
-    //     pins.gpio5.into_pull_down_input(),
-    //     pins.gpio6.into_pull_down_input(),
-    //     pins.gpio7.into_pull_down_input(),
-    //     pins.gpio8.into_pull_down_input(),
-    // );
 
-    let mut row0 = pins.gpio5.into_pull_down_input();
+    let mut rows: [Pin<DynPinId, FunctionSioInput, PullDown>; 4] = [
+        pins.gpio5.into_pull_down_input().into_dyn_pin(),
+        pins.gpio6.into_pull_down_input().into_dyn_pin(),
+        pins.gpio7.into_pull_down_input().into_dyn_pin(),
+        pins.gpio8.into_pull_down_input().into_dyn_pin(),
+    ];
 
+    let mut counter: i32;
     loop {
-        // info!("on!");
-        // led_pin.set_high().unwrap();
-        // delay.delay_ms(500);
-        // info!("off!");
-        // led_pin.set_low().unwrap();
-        // delay.delay_ms(500);
+        counter = 0;
 
-        // cols.0.set_high();
-        // cols.1.set_high();
-        // cols.2.set_high();
-        // cols.3.set_high();
-        cols[4].set_high().unwrap();
+        cols.iter_mut().enumerate().for_each(|(key, col)| {
+            col.set_high().unwrap();
+            delay.delay_us(30);
+            rows.iter_mut().enumerate().for_each(|(key, row)| {
+                if row.is_high().unwrap() {
+                    counter += 1;
+                }
+            });
+            col.set_low().unwrap();
+        });
 
-        delay.delay_ms(20);
-        // cols.0.set_low();
-        // cols.1.set_low();
-        // cols.2.set_low();
-        // cols.3.set_low();
-
-        if row0.is_high().unwrap() {
+        if counter % 2 == 0 {
             led_pin.set_high().unwrap();
         } else {
             led_pin.set_low().unwrap();
         }
-
-        cols[4].set_low().unwrap();
     }
 }
 
