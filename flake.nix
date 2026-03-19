@@ -37,8 +37,8 @@
         rustToolchain = inputs.fenix.packages.${prev.stdenv.hostPlatform.system}.fromToolchainFile {
             file = ./rust-toolchain.toml;
             #sha256 = inputs.nixpkgs.lib.fakeSha256;
-            sha256 = "sha256-qaiVSNjXbvb8Jd+Zo0y59MrGs8KQwCQ/QwSm4Gn4Lxs=";
-        };
+            sha256 = "sha256-0sr6gbo1nFlMfdL9u88XJgmJ7ImZYNrQzd6wXfXf1QE=";
+       };
 
 
       };
@@ -54,6 +54,7 @@
               cargo-deny
               cargo-edit
               cargo-watch
+              probe-rs-tools
               rust-analyzer
               flip-link
               picotool

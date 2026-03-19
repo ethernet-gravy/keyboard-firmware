@@ -3,7 +3,6 @@
 #![no_std]
 #![no_main]
 
-use bsp::entry;
 use defmt::*;
 use defmt_rtt as _;
 use embedded_hal::digital::{InputPin, OutputPin};
@@ -11,18 +10,23 @@ use panic_probe as _;
 
 // Provide an alias for our BSP so we can switch targets quickly.
 // Uncomment the BSP you included in Cargo.toml, the rest of the code does not need to change.
-use rp_pico::{
-    self as bsp,
-    hal::gpio::{DynPinId, FunctionSioInput, FunctionSioOutput, Pin, PullDown, PullNone},
-};
+use rp2040_hal::gpio::{DynPinId, FunctionSioInput, FunctionSioOutput, Pin, PullDown, PullNone};
 // use sparkfun_pro_micro_rp2040 as bsp;
 
-use bsp::hal::{
+use rp2040_hal::{
+    self as hal,
     clocks::{init_clocks_and_plls, Clock},
     pac,
     sio::Sio,
     watchdog::Watchdog,
 };
+use usb_device::bus::UsbBusAllocator;
+use usb_device::device::{StringDescriptors, UsbDeviceBuilder, UsbVidPid};
+use usbd_human_interface_device::prelude::UsbHidClassBuilder;
+
+#[link_section = ".boot_loader"]
+#[used]
+pub static BOOT2_FIRMWARE: [u8; 256] = rp2040_boot2::BOOT_LOADER_W25Q080;
 
 #[entry]
 fn main() -> ! {
@@ -48,7 +52,7 @@ fn main() -> ! {
 
     let mut delay = cortex_m::delay::Delay::new(core.SYST, clocks.system_clock.freq().to_Hz());
 
-    let pins = bsp::Pins::new(
+    let pins = rp2040_hal::gpio::Pins::new(
         pac.IO_BANK0,
         pac.PADS_BANK0,
         sio.gpio_bank0,
@@ -91,7 +95,7 @@ fn main() -> ! {
             .into_push_pull_output()
             .into_pull_type()
             .into_dyn_pin(),
-        pins.b_power_save
+        pins.gpio23
             .into_push_pull_output()
             .into_pull_type()
             .into_dyn_pin(),
@@ -104,26 +108,47 @@ fn main() -> ! {
         pins.gpio8.into_pull_down_input().into_dyn_pin(),
     ];
 
-    let mut counter: i32;
-    loop {
-        counter = 0;
+    let usb_bus = UsbBusAllocator::new(hal::usb::UsbBus::new(
+        pac::USBCTRL_REGS,
+        pac::USBCTRL_DPRAM,
+        clocks.usb_clock,
+        true,
+        &mut pac.RESETS,
+    ));
 
-        cols.iter_mut().enumerate().for_each(|(key, col)| {
+    let mut keyboard = UsbHidClassBuilder::new()
+        .add_device(
+            usbd_human_interface_device::device::keyboard::NKROBootKeyboardConfig::default(),
+        )
+        .build(&usb_bus);
+
+    let mut usb_dev = UsbDeviceBuilder::new(&usb_bus, UsbVidPid(0xfeed, 0x8813))
+        .strings(&[StringDescriptors::default()
+            .manufacturer("keyboard-firmware")
+            .product("Split Keyboard")
+            .serial_number("Winter")])
+        .unwrap()
+        .build();
+
+    let mut raw_state: i32;
+    loop {
+        raw_state = 0;
+
+        cols.iter_mut().enumerate().for_each(|(col_num, col)| {
             col.set_high().unwrap();
             delay.delay_us(30);
-            rows.iter_mut().enumerate().for_each(|(key, row)| {
+            rows.iter_mut().enumerate().for_each(|(row_num, row)| {
                 if row.is_high().unwrap() {
-                    counter += 1;
+                    raw_state |= (1 << (row_num * 5 + col_num));
                 }
             });
             col.set_low().unwrap();
         });
 
-        if counter % 2 == 0 {
-            led_pin.set_high().unwrap();
-        } else {
-            led_pin.set_low().unwrap();
-        }
+        led_pin.set_high().unwrap();
+        delay.delay_ms(1000);
+        led_pin.set_low().unwrap();
+        delay.delay_ms(1000);
     }
 }
 
