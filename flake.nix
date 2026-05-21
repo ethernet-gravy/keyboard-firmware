@@ -37,7 +37,7 @@
         rustToolchain = inputs.fenix.packages.${prev.stdenv.hostPlatform.system}.fromToolchainFile {
             file = ./rust-toolchain.toml;
             #sha256 = inputs.nixpkgs.lib.fakeSha256;
-            sha256 = "sha256-0sr6gbo1nFlMfdL9u88XJgmJ7ImZYNrQzd6wXfXf1QE=";
+            sha256 = "sha256-4Nmp9HZp0t7vdtdS1bO3K6eOyabKiSXVt+V1dRJ+30Y=";
        };
 
 

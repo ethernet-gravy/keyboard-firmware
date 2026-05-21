@@ -3,26 +3,36 @@
 #![no_std]
 #![no_main]
 
+use cortex_m::prelude::_embedded_hal_timer_CountDown;
 use defmt::*;
 use defmt_rtt as _;
-use embedded_hal::digital::{InputPin, OutputPin};
+use embedded_hal::digital::{InputPin, OutputPin, StatefulOutputPin};
 use panic_probe as _;
 
 // Provide an alias for our BSP so we can switch targets quickly.
 // Uncomment the BSP you included in Cargo.toml, the rest of the code does not need to change.
-use rp2040_hal::gpio::{DynPinId, FunctionSioInput, FunctionSioOutput, Pin, PullDown, PullNone};
+use rp2040_hal::gpio::{
+    DynPinId, FunctionSioInput, FunctionSioOutput, Pin, PinState, PullDown, PullNone,
+};
 // use sparkfun_pro_micro_rp2040 as bsp;
 
+use core::fmt::Write;
+use rp2040_hal::uart::{DataBits, StopBits, UartConfig};
 use rp2040_hal::{
     self as hal,
     clocks::{init_clocks_and_plls, Clock},
+    entry,
+    fugit::{ExtU32, RateExtU32},
     pac,
     sio::Sio,
     watchdog::Watchdog,
 };
 use usb_device::bus::UsbBusAllocator;
 use usb_device::device::{StringDescriptors, UsbDeviceBuilder, UsbVidPid};
+use usb_device::UsbError;
+use usbd_human_interface_device::page::Keyboard;
 use usbd_human_interface_device::prelude::UsbHidClassBuilder;
+use usbd_human_interface_device::UsbHidError;
 
 #[link_section = ".boot_loader"]
 #[used]
@@ -51,6 +61,7 @@ fn main() -> ! {
     .unwrap();
 
     let mut delay = cortex_m::delay::Delay::new(core.SYST, clocks.system_clock.freq().to_Hz());
+    let timer = hal::Timer::new(pac.TIMER, &mut pac.RESETS, &clocks);
 
     let pins = rp2040_hal::gpio::Pins::new(
         pac.IO_BANK0,
@@ -70,6 +81,16 @@ fn main() -> ! {
     // in series with the LED.
     let mut led_pin = pins.gpio17.into_push_pull_output();
 
+    let uart_pins = (pins.gpio12.into_function(), pins.gpio13.into_function());
+
+    let mut uart = hal::uart::UartPeripheral::new(pac.UART0, uart_pins, &mut pac.RESETS)
+        .enable(
+            UartConfig::new(115200.Hz(), DataBits::Eight, None, StopBits::One),
+            clocks.peripheral_clock.freq(),
+        )
+        .unwrap();
+
+    uart.write_full_blocking(b"Hello!\n");
     // let mut cols = (
     //     pins.gpio27.into_push_pull_output(),
     //     pins.gpio26.into_push_pull_output(),
@@ -109,8 +130,8 @@ fn main() -> ! {
     ];
 
     let usb_bus = UsbBusAllocator::new(hal::usb::UsbBus::new(
-        pac::USBCTRL_REGS,
-        pac::USBCTRL_DPRAM,
+        pac.USBCTRL_REGS,
+        pac.USBCTRL_DPRAM,
         clocks.usb_clock,
         true,
         &mut pac.RESETS,
@@ -126,11 +147,20 @@ fn main() -> ! {
         .strings(&[StringDescriptors::default()
             .manufacturer("keyboard-firmware")
             .product("Split Keyboard")
-            .serial_number("Winter")])
+            .serial_number("Winter-Harvest")])
         .unwrap()
         .build();
+    let mut input_count_down = timer.count_down();
+    input_count_down.start(10.millis());
+    let mut led_count_down = timer.count_down();
+    led_count_down.start(1000.millis());
+
+    let mut tick_count_down = timer.count_down();
+    tick_count_down.start(1.millis());
 
     let mut raw_state: i32;
+    // keyboard.device().write_report(keys).unwrap();
+    // let _ = keyboard.tick();
     loop {
         raw_state = 0;
 
@@ -139,16 +169,56 @@ fn main() -> ! {
             delay.delay_us(30);
             rows.iter_mut().enumerate().for_each(|(row_num, row)| {
                 if row.is_high().unwrap() {
-                    raw_state |= (1 << (row_num * 5 + col_num));
+                    raw_state |= 1 << (row_num * 5 + col_num);
                 }
             });
             col.set_low().unwrap();
         });
+        //Poll the keys every 10ms
+        if input_count_down.wait().is_ok() {
+            let keys: [Keyboard; 1] = [Keyboard::B];
+            match keyboard.device().write_report(keys) {
+                Err(UsbHidError::WouldBlock) => {}
+                Err(UsbHidError::Duplicate) => {}
+                Ok(_) => {}
+                Err(e) => {
+                    core::panic!("Failed to write keyboard report: {:?}", e)
+                }
+            };
+        }
 
-        led_pin.set_high().unwrap();
-        delay.delay_ms(1000);
-        led_pin.set_low().unwrap();
-        delay.delay_ms(1000);
+        //Tick once per ms
+        if tick_count_down.wait().is_ok() {
+            match keyboard.tick() {
+                Err(UsbHidError::WouldBlock) => {}
+                Ok(_) => {}
+                Err(e) => {
+                    core::panic!("Failed to process keyboard tick: {:?}", e)
+                }
+            };
+        }
+
+        if usb_dev.poll(&mut [&mut keyboard]) {
+            match keyboard.device().read_report() {
+                Err(UsbError::WouldBlock) => {
+                    //do nothing
+                }
+                Err(e) => {
+                    core::panic!("Failed to read keyboard report: {:?}", e)
+                }
+                Ok(leds) => {
+                    led_pin.set_state(PinState::from(leds.num_lock)).ok();
+                }
+            }
+        }
+
+        if led_count_down.wait().is_ok() {
+            writeln!(uart, "Hello").unwrap();
+            match led_pin.is_set_high().unwrap() {
+                true => led_pin.set_low().unwrap(),
+                false => led_pin.set_high().unwrap(),
+            };
+        }
     }
 }
 
