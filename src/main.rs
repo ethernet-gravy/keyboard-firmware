@@ -3,10 +3,13 @@
 #![no_std]
 #![no_main]
 
+#[macro_use]
+extern crate fixedvec;
 use cortex_m::prelude::_embedded_hal_timer_CountDown;
 use defmt::*;
 use defmt_rtt as _;
 use embedded_hal::digital::{InputPin, OutputPin, StatefulOutputPin};
+use fixedvec::FixedVec;
 use panic_probe as _;
 
 // Provide an alias for our BSP so we can switch targets quickly.
@@ -37,6 +40,37 @@ use usbd_human_interface_device::UsbHidError;
 #[link_section = ".boot_loader"]
 #[used]
 pub static BOOT2_FIRMWARE: [u8; 256] = rp2040_boot2::BOOT_LOADER_W25Q080;
+
+const LAYOUT: [[usbd_human_interface_device::page::Keyboard; 5]; 4] = [
+    [
+        Keyboard::Q,
+        Keyboard::W,
+        Keyboard::E,
+        Keyboard::R,
+        Keyboard::T,
+    ],
+    [
+        Keyboard::A,
+        Keyboard::S,
+        Keyboard::D,
+        Keyboard::F,
+        Keyboard::G,
+    ],
+    [
+        Keyboard::Z,
+        Keyboard::X,
+        Keyboard::C,
+        Keyboard::V,
+        Keyboard::B,
+    ],
+    [
+        Keyboard::NoEventIndicated,
+        Keyboard::NoEventIndicated,
+        Keyboard::E,
+        Keyboard::R,
+        Keyboard::T,
+    ],
+];
 
 #[entry]
 fn main() -> ! {
@@ -70,15 +104,6 @@ fn main() -> ! {
         &mut pac.RESETS,
     );
 
-    // This is the correct pin on the Raspberry Pico board. On other boards, even if they have an
-    // on-board LED, it might need to be changed.
-    //
-    // Notably, on the Pico W, the LED is not connected to any of the RP2040 GPIOs but to the cyw43 module instead.
-    // One way to do that is by using [embassy](https://github.com/embassy-rs/embassy/blob/main/examples/rp/src/bin/wifi_blinky.rs)
-    //
-    // If you have a Pico W and want to toggle a LED with a simple GPIO output pin, you can connect an external
-    // LED to one of the GPIO pins, and reference that pin here. Don't forget adding an appropriate resistor
-    // in series with the LED.
     let mut led_pin = pins.gpio17.into_push_pull_output();
 
     let uart_pins = (pins.gpio12.into_function(), pins.gpio13.into_function());
@@ -90,7 +115,7 @@ fn main() -> ! {
         )
         .unwrap();
 
-    uart.write_full_blocking(b"Hello!\n");
+    uart.write_full_blocking(b"Hello! Welcome to the keyboard firmware.\r\n");
     // let mut cols = (
     //     pins.gpio27.into_push_pull_output(),
     //     pins.gpio26.into_push_pull_output(),
@@ -99,24 +124,26 @@ fn main() -> ! {
     //     pins.gpio16.into_push_pull_output(),
     // );
 
+    let mut prealloc_space = alloc_stack!([Keyboard; 12]);
+    let mut report = FixedVec::new(&mut prealloc_space);
     let mut cols: [Pin<DynPinId, FunctionSioOutput, PullNone>; 5] = [
-        pins.gpio27
-            .into_push_pull_output()
-            .into_pull_type()
-            .into_dyn_pin(),
         pins.gpio26
             .into_push_pull_output()
             .into_pull_type()
             .into_dyn_pin(),
-        pins.gpio15
+        pins.gpio22
             .into_push_pull_output()
             .into_pull_type()
             .into_dyn_pin(),
-        pins.gpio14
+        pins.gpio20
             .into_push_pull_output()
             .into_pull_type()
             .into_dyn_pin(),
         pins.gpio23
+            .into_push_pull_output()
+            .into_pull_type()
+            .into_dyn_pin(),
+        pins.gpio21
             .into_push_pull_output()
             .into_pull_type()
             .into_dyn_pin(),
@@ -151,7 +178,7 @@ fn main() -> ! {
         .unwrap()
         .build();
     let mut input_count_down = timer.count_down();
-    input_count_down.start(10.millis());
+    input_count_down.start(1000.millis());
     let mut led_count_down = timer.count_down();
     led_count_down.start(1000.millis());
 
@@ -164,20 +191,24 @@ fn main() -> ! {
     loop {
         raw_state = 0;
 
-        cols.iter_mut().enumerate().for_each(|(col_num, col)| {
-            col.set_high().unwrap();
-            delay.delay_us(30);
-            rows.iter_mut().enumerate().for_each(|(row_num, row)| {
-                if row.is_high().unwrap() {
-                    raw_state |= 1 << (row_num * 5 + col_num);
-                }
-            });
-            col.set_low().unwrap();
-        });
+        // cols.iter_mut().enumerate().for_each(|(col_num, col)| {
+        //     col.set_high().unwrap();
+        //     delay.delay_us(30);
+        //     rows.iter_mut().enumerate().for_each(|(row_num, row)| {
+        //         if row.is_high().unwrap() {
+        //             raw_state |= 1 << (row_num * 5 + col_num);
+        //         }
+        //     });
+        //     col.set_low().unwrap();
+        // });
+
+        read_input_state(&mut cols, &mut rows, &mut delay, &mut report);
         //Poll the keys every 10ms
         if input_count_down.wait().is_ok() {
-            let keys: [Keyboard; 1] = [Keyboard::B];
-            match keyboard.device().write_report(keys) {
+            match keyboard
+                .device()
+                .write_report(report.as_slice().iter().cloned())
+            {
                 Err(UsbHidError::WouldBlock) => {}
                 Err(UsbHidError::Duplicate) => {}
                 Ok(_) => {}
@@ -206,14 +237,12 @@ fn main() -> ! {
                 Err(e) => {
                     core::panic!("Failed to read keyboard report: {:?}", e)
                 }
-                Ok(leds) => {
-                    led_pin.set_state(PinState::from(leds.num_lock)).ok();
-                }
+                Ok(_) => {}
             }
         }
 
         if led_count_down.wait().is_ok() {
-            writeln!(uart, "Hello").unwrap();
+            writeln!(uart, "The state is {:#b}\r", raw_state).unwrap();
             match led_pin.is_set_high().unwrap() {
                 true => led_pin.set_low().unwrap(),
                 false => led_pin.set_high().unwrap(),
@@ -222,4 +251,30 @@ fn main() -> ! {
     }
 }
 
+fn read_input_state(
+    cols: &mut [Pin<DynPinId, FunctionSioOutput, PullNone>; 5],
+    rows: &mut [Pin<DynPinId, FunctionSioInput, PullDown>; 4],
+    delay: &mut cortex_m::delay::Delay,
+    report: &mut FixedVec<Keyboard>,
+) {
+    let mut raw_state = 0;
+    cols.iter_mut().enumerate().for_each(|(col_num, col)| {
+        col.set_high().unwrap();
+        delay.delay_us(30);
+        rows.iter_mut().enumerate().for_each(|(row_num, row)| {
+            if row.is_high().unwrap() {
+                raw_state |= 1 << (row_num * 5 + col_num);
+            }
+        });
+        col.set_low().unwrap();
+    });
+    report.clear();
+    for i in 0..32 {
+        if report.iter().count() < 12 {
+            if ((raw_state >> i) & 0x1) == 1 {
+                report.push(LAYOUT[i / 4][i % 4]).unwrap();
+            }
+        }
+    }
+}
 // End of file

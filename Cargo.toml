@@ -24,6 +24,7 @@ rp2040-hal = { version="0.10", features=["rt", "critical-section-impl"] }
 rp2040-boot2 = "0.3"
 usb-device = "0.3.2"
 usbd-human-interface-device = "0.6.0"
+fixedvec = "0.2.4"
 
 # cargo build/run
 [profile.dev]
